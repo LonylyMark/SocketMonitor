@@ -29,6 +29,7 @@ static NSMutableArray *streamClientCallBackArray;
 
 
 @implementation HookSocket
+//定义静态方法  参数与监控的方法一样
 static int (*orig_connect)(int, const struct sockaddr *, socklen_t);
 static int (*orig_close)(int);
 static int (*orig_socket)(int, int, int);
@@ -106,7 +107,7 @@ struct hostent	*my_gethostbyname(const char * myHostName){
 //
 //    return a;
 //}
-
+//关闭socket连接
 int	 my_close(int myInt){
     
     double beginTime = CFAbsoluteTimeGetCurrent();
@@ -120,7 +121,7 @@ int	 my_close(int myInt){
     return rt;
 }
 
-//int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+
 //第一个参数即为客户端的socket描述字
 //第二参数为服务器的socket地址
 //第三个参数为socket地址的长度。客户端通过调用connect函数来建立与TCP服务器的连接。
@@ -145,6 +146,7 @@ int my_connect(int myInt, const struct sockaddr * myskaddr, socklen_t skt){
         //        int por = htons(sin.sin_port);
         //        NSLog(@"%@",ip);
         //        NSLog(@"%d",por);
+        //获取IP和端口号
         char servHost[1024];
         char servPort[20];
         getnameinfo(myskaddr, sizeof(myskaddr), servHost, sizeof(servHost), servPort, sizeof(servPort), NI_NUMERICHOST | NI_NUMERICSERV);
@@ -172,18 +174,18 @@ int my_connect(int myInt, const struct sockaddr * myskaddr, socklen_t skt){
 //参数type 描述要建立的套接字的类型。
 //参数protocol说明该套接字使用的特定协议，如果调用者不希望特别指定使用的协议，则置为0，使用默认的连接模式。
 //返回-1出错
-int my_socket(int i, int j, int k){
+int my_socket(int addressFamily, int type, int protocol){
     
-    int a= orig_socket(i,j,k);
+    int socket= orig_socket(addressFamily,type,protocol);
     
-    if(a < 0){
+    if(socket < 0){
         int optval;
         unsigned int optlen = sizeof(int);
-        getsockopt(a, SOL_SOCKET, SO_TYPE, &optval, &optlen);
+        getsockopt(socket, SOL_SOCKET, SO_TYPE, &optval, &optlen);
         printf("optval = %d\n", optval);
     }
-    NSLog(@"hook到了socket %d 参数%d %d %d \n ",a,i,j,k);
-    return a;
+    NSLog(@"hook到了socket %d 参数%d %d %d \n ",socket,addressFamily,type,protocol);
+    return socket;
 }
 
 ssize_t	my_sendto(int sockfd , const void *msg, size_t len,
@@ -236,7 +238,7 @@ ssize_t my_recv(int socketFileDescriptor, void *buffer, size_t length, int j){
     return rt;
 }
 
-#pragma mark -- CFSocket
+#pragma mark -- CFSocket (CFNetwork框架创建)
 CFSocketRef	my_CFSocketCreate(CFAllocatorRef allocator, SInt32 protocolFamily, SInt32 socketType, SInt32 protocol, CFOptionFlags callBackTypes, CFSocketCallBack callout, const CFSocketContext *context){
     
     CFSocketRef orig_socket = orig_CFSocketCreate( allocator,  protocolFamily,  socketType,  protocol,  callBackTypes,  callout, context);
@@ -302,7 +304,7 @@ Boolean my_CFReadStreamSetClient(CFReadStreamRef stream, CFOptionFlags streamEve
     return readClient;
 }
 
- void my_CFReadStreamClientCallBack(CFReadStreamRef stream, CFStreamEventType type, void *clientCallBackInfo){
+void my_CFReadStreamClientCallBack(CFReadStreamRef stream, CFStreamEventType type, void *clientCallBackInfo){
    
 //
 //     int i = 0;
@@ -317,7 +319,7 @@ Boolean my_CFReadStreamSetClient(CFReadStreamRef stream, CFOptionFlags streamEve
 //     }
      
 }
-
+//关闭读数据的流
 void my_CFReadStreamClose(CFReadStreamRef stream){
     
     orig_CFReadStreamClose(stream);
@@ -339,11 +341,12 @@ void my_CFReadStreamUnscheduleFromRunLoop(CFReadStreamRef stream, CFRunLoopRef r
     orig_CFReadStreamUnscheduleFromRunLoop(stream,runLoop,runLoopMode);
     return;
 }
-
+//放在appdelegate里面调用  启动对socket的监控
 -(void)open
 {
     streamClientCallBackArray = [NSMutableArray array];
     save_orignal_symbols();
+    //动态替换成实现自定义功能的方法
     rebind_symbols((struct rebinding[15]){{"connect",my_connect,(void *)&orig_connect},
         {"close",my_close,(void *)&orig_close},
         {"socket",my_socket,(void *)&orig_socket},
